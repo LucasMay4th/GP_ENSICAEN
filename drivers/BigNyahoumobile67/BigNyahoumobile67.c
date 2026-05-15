@@ -145,13 +145,88 @@ void clear_opponents(Map* map){
 };
 
 /* 3. Validation de trajectoire (utilise follow_line) */
-int is_move_valid(Map* map, Position start, Position end);
+int is_move_valid(Map* map, Position start, Position end){
+    InfoLine infoLine;
+    initLine(start.x, start.y, end.x, end.y, &infoLine);
+    while(nextPoint(&infoLine, &start, 1) > 0) {
+        if(end.x >= 0 && end.x < map->height && end.y >= 0 && end.y < map->width){
+            return 0; 
+        }
+        if (map->grid[end.x][end.y].type == '.'){
+            return 0; 
+        }
+        if(map->grid[end.x][end.y].has_opponent){
+            return 0; 
+        }
+    }
+};
 
 /* 4. Algorithme DFS (Simulation & Choix d'action) */
-int dfs_simulate(Map* map, CarState state, int depth, int is_first_turn, int* best_ax, int* best_ay);
+int dfs_simulate(Map* map, CarState state, int depth, int is_first_turn, int* best_ax, int* best_ay){
+    int meilleur_score = -INF;
+    int ax, ay, score, nouvelle_vx, nouvelle_vy;
+    if(depth == 0 || state.gas <= 0) {
+        return -map->grid[state.pos.x][state.pos.y].dist_to_goal;
+    }
+    for (ax = -1; ax <= 1; ax++) {
+        for (ay = -1; ay <= 1; ay++) {
+            //on simule lanouvelle cinematique
+            nouvelle_vx = state.vx + ax;
+            nouvelle_vy = state.vy + ay;
+            // Vérifier la limite de vitesse stricte
+            if(nouvelle_vx > 5) {
+                continue;
+            }
+            Position new_pos;
+            new_pos.x = state.pos.x + nouvelle_vx;
+            new_pos.y = state.pos.y + nouvelle_vy;
+            // 2. Vérifier la validité de la trajectoire
+            if(is_move_valid(map, state.pos, new_pos)==0) {
+                continue;
+            }
+            // 3. Cloner l'état et mettre à jour
+            CarState new_state;
+            new_state.pos = new_pos;
+            new_state.vx = nouvelle_vx;
+            new_state.vy = nouvelle_vy;
+            new_state.gas =     state.gas - 1;
+            new_state.boosts_left = state.boosts_left;
+            // 4. Appel récursif
+            score = dfs_simulate(map, new_state, depth - 1, 0,NULL, NULL);
+            // 5. Sauvegarder le meilleur choix (uniquement au premier niveau de l'arbre)
+            if(score > meilleur_score) {
+                meilleur_score = score;
+                if(is_first_turn==1) {
+                    *best_ax = ax;
+                    *best_ay = ay;
+                }
+            }
+        }
+    }
+
+};
 
 /* 5. Heuristique de Boost */
-int is_safe_to_boost(Map* map, CarState state, int ax, int ay);
+int is_safe_to_boost(Map* map, CarState state, int ax, int ay){
+    if(state.boosts_left <= 0) {
+        return 0; 
+    }
+   //simulation grande accélération
+    int vitesse_projetée_x = state.vx + 2*ax;
+    int vitesse_projetée_y = state.vy + 2*ay;
+    // Formule : Distance d'arrêt = V * (V + 1) / 2 (appliquée à la norme de la vitesse)
+    int vitesse_norme = sqrt(vitesse_projetée_x*vitesse_projetée_x + vitesse_projetée_y*vitesse_projetée_y);
+    int distance_freinage = (vitesse_norme * (vitesse_norme + 1)) / 2;
+    // Où sera-t-on si on met "X" tours à s'arrêter sans dévier ?
+    Position point_impact_theorique;
+    point_impact_theorique.x = state.pos.x + (vitesse_projetée_x / vitesse_norme) * distance_freinage;
+    point_impact_theorique.y = state.pos.y + (vitesse_projetée_y / vitesse_norme) * distance_freinage;
+    // Si ce lointain point d'impact est un mur ou du hors-piste, le boost est suicidaire
+    if(map->grid[point_impact_theorique.y][point_impact_theorique.x].type == '.'){
+        return 0; 
+    }
+
+};
 
 
 
@@ -187,9 +262,7 @@ int main(void) {
         }
     }
     
-    /* Phase de pré-calcul (Avant le début de la course) */
-    /* C'est ici que tu appelleras ton A* Global pour cartographier le circuit */
-    /* compute_global_path(map, pos_depart); */
+    compute_distance_map(map); /* Pré-calcul des distances à l'arrivée pour l'heuristique */
 
     /* Boucle de jeu */
     while (!feof(stdin)) {
