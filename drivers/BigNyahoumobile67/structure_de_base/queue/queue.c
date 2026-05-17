@@ -9,7 +9,8 @@
  * @return A pointer to the newly created queue.
  */
  Queue* createQueue() {
-    Queue* q =(Queue*)malloc(sizeof(Queue));
+    Queue* q;
+    q =(Queue*)malloc(sizeof(Queue));
     q->front=NULL;
     q->rear=NULL;
     return q;
@@ -36,12 +37,13 @@ int isQueueEmpty(Queue q) {
  * @param q The queue to print.
  */
 void queuePrint(Queue q) {
+    Cell* curr;
     if (q.front == NULL) {
         printf("[]");
         return;
     }
     printf("[");
-    Cell* curr =q.front;
+    curr =q.front;
     while(curr!=q.rear){
         printf("%d,",curr->value);
         curr=curr->nextCell;
@@ -59,7 +61,8 @@ void queuePrint(Queue q) {
  * @param data The data to be added to the queue.
  */
 void enqueue(Queue* q, int data) {
-    Cell* new = (Cell*)malloc(sizeof(Cell));
+    Cell* new;
+    new = (Cell*)malloc(sizeof(Cell));
     new->nextCell=NULL;
     new->value=data;
      if (q->rear == NULL) {         
@@ -79,11 +82,13 @@ void enqueue(Queue* q, int data) {
  * @return The value stored in the front element of the queue.
  */
 int dequeue(Queue* q) {
+    int elem;
+    Cell* first;;
     if (q->front == NULL) {
         return -1;
     }
-    int elem=q->front->value;
-    Cell* first=q->front;
+    elem=q->front->value;
+    first=q->front;
     q->front=first->nextCell;
     if (q->front == NULL) {
         q->rear = NULL;
