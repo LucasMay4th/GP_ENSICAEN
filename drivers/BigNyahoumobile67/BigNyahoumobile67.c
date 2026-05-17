@@ -176,8 +176,22 @@ int dfs_simulate(Map* map, CarState state, int depth, int is_first_turn, int* be
     CarState new_state;
     Position new_pos;
     
-    if(depth == 0 || state.gas <= 0) {
-        return -map->grid[state.pos.y][state.pos.x].dist_to_goal;
+    /* --- CONDITION D'ARRÊT & ÉVALUATION --- */
+    
+    /* 1. Mourir ou tomber en panne est inacceptable */
+    if(state.gas <= 0) {
+        return -INF + 1; /* On renvoie le pire score possible */
+    }
+    
+    /* 2. On a atteint l'horizon de prédiction (fin des 4 tours) */
+    if(depth == 0) {
+        int score = 0;
+        int v_norm_carre = (state.vx * state.vx) + (state.vy * state.vy);
+        score -= (map->grid[state.pos.y][state.pos.x].dist_to_goal * 1000);
+        score += (state.gas * 10);
+        score -= (v_norm_carre * 5);
+        
+        return score;
     }
     
     for (ax = -1; ax <= 1; ax++) {
