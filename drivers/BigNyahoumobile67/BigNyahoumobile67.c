@@ -7,7 +7,7 @@
 
 #define MAX_LINE_LENGTH 1024
 #define MAX_BOOSTS 5
-#define INF 999999
+#define INF 1000000000
 
 typedef struct {
     int x;
@@ -23,9 +23,9 @@ typedef struct {
 } CarState;
 
 typedef struct {
-    char type;         /* '#', '~', '.', '=' */
-    int dist_to_goal;  /* Rempli par Dijkstra */
-    int has_opponent;  /* Booléen (1 si adversaire présent ce tour) */
+    char type;         
+    int dist_to_goal;  
+    int has_opponent;  
 } MapCell;
 
 typedef struct {
@@ -40,9 +40,8 @@ void free_map(Map* map);
 void compute_distance_map(Map* map);
 void update_opponents(Map* map, CarState opp1, CarState opp2);
 void clear_opponents(Map* map);
-int is_move_valid(Map* map, Position start, Position end, int* crossed_finish,int norme_carre);
+int is_move_valid(Map* map, Position start, Position end, int* crossed_finish, int* crossed_sand);
 int dfs_simulate(Map* map, CarState state, int depth, int is_first_turn, int* best_ax, int* best_ay);
-int is_safe_to_boost(Map* map, CarState state, int ax, int ay);
 int gasConsumption(int accX, int accY, int speedX, int speedY, int inSand);
 
 /* ================= IMPLEMENTATIONS ================= */
@@ -77,15 +76,54 @@ void free_map(Map* map) {
     free(map);
 }
 
-
 void compute_distance_map(Map* map) {
-    int dx[8] = {-1,  0,  1, -1, 1, -1, 0, 1};
-    int dy[8] = {-1, -1, -1,  0, 0,  1, 1, 1};
+    int dx[8] = {-1,  1,  0,  0, -1, -1,  1,  1};
+    int dy[8] = { 0,  0, -1,  1, -1,  1, -1,  1};
+    int cost[8] = {10, 10, 10, 10, 14, 14, 14, 14}; 
     int i, j, x, y, nx, ny, current, nouveau_cout;
     Queue *q;
     Cell cell;
     
+    int start_x = -1, start_y = -1;
+    int finish_x = -1, finish_y = -1;
+    int cut_x = -1, cut_y = -1;
+    int is_horizontal_cut = 0;
+    char backup[25];
+    
     q = createQueue();
+    
+    for(i = 0; i < map->height; i++) {
+        for(j = 0; j < map->width; j++) {
+            if(map->grid[i][j].type == '1') {
+                start_x = j; start_y = i;
+            }
+            if(map->grid[i][j].type == '=') {
+                finish_x = j; finish_y = i;
+            }
+        }
+    }
+    
+    if (start_x != -1 && finish_x != -1) {
+        if (abs(start_y - finish_y) > abs(start_x - finish_x)) {
+            cut_y = (start_y + finish_y) / 2;
+            is_horizontal_cut = 1;
+            for(j = start_x - 12; j <= start_x + 12; j++) {
+                if (j >= 0 && j < map->width) {
+                    backup[j - (start_x - 12)] = map->grid[cut_y][j].type;
+                    if (map->grid[cut_y][j].type != '.') map->grid[cut_y][j].type = '.';
+                }
+            }
+        } else {
+            cut_x = (start_x + finish_x) / 2;
+            is_horizontal_cut = 0;
+            for(i = start_y - 12; i <= start_y + 12; i++) {
+                if (i >= 0 && i < map->height) {
+                    backup[i - (start_y - 12)] = map->grid[i][cut_x].type;
+                    if (map->grid[i][cut_x].type != '.') map->grid[i][cut_x].type = '.';
+                }
+            }
+        }
+    }
     
     for(i = 0; i < map->height; i++) {
         for(j = 0; j < map->width; j++) {
@@ -100,12 +138,10 @@ void compute_distance_map(Map* map) {
         }
     }
     
-    
     while(!isQueueEmpty(*q)) {
-        
         current = dequeue(q);
-        y = current / map->width; /* Ligne */
-        x = current % map->width; /* Colonne */
+        y = current / map->width; 
+        x = current % map->width; 
         
         for (i = 0; i < 8; i++) {
             nx = x + dx[i];
@@ -113,10 +149,13 @@ void compute_distance_map(Map* map) {
             
             if (nx >= 0 && nx < map->width && ny >= 0 && ny < map->height) {
                 if (map->grid[ny][nx].type != '.') {
-                    nouveau_cout = map->grid[y][x].dist_to_goal + 1;
-                    if (map->grid[ny][nx].type == '~') {
-                        nouveau_cout += 5;
+                    if (i >= 4) {
+                        if (map->grid[y][nx].type == '.' && map->grid[ny][x].type == '.') continue;
                     }
+                    
+                    nouveau_cout = map->grid[y][x].dist_to_goal + cost[i];
+                    if (map->grid[ny][nx].type == '~') nouveau_cout += 50;
+                    
                     if (nouveau_cout < map->grid[ny][nx].dist_to_goal) {
                         map->grid[ny][nx].dist_to_goal = nouveau_cout;
                         cell.value = ny * map->width + nx;
@@ -127,12 +166,22 @@ void compute_distance_map(Map* map) {
             }
         }
     }
-    
     free(q);
+    
+    if (start_x != -1 && finish_x != -1) {
+        if (is_horizontal_cut) {
+            for(j = start_x - 12; j <= start_x + 12; j++) {
+                if (j >= 0 && j < map->width) map->grid[cut_y][j].type = backup[j - (start_x - 12)];
+            }
+        } else {
+            for(i = start_y - 12; i <= start_y + 12; i++) {
+                if (i >= 0 && i < map->height) map->grid[i][cut_x].type = backup[i - (start_y - 12)];
+            }
+        }
+    }
 }
 
 void update_opponents(Map* map, CarState opp1, CarState opp2) {
-    /* Sécurité : on vérifie que l'adversaire est bien sur la carte */
     if (opp1.pos.x >= 0 && opp1.pos.x < map->width && opp1.pos.y >= 0 && opp1.pos.y < map->height) {
         map->grid[opp1.pos.y][opp1.pos.x].has_opponent = 1;
     }
@@ -144,16 +193,15 @@ void update_opponents(Map* map, CarState opp1, CarState opp2) {
 void clear_opponents(Map* map) {
     int i, j;
     for(i = 0; i < map->height; i++) {
-        for(j = 0; j < map->width; j++) {
-            map->grid[i][j].has_opponent = 0;
-        }
+        for(j = 0; j < map->width; j++) map->grid[i][j].has_opponent = 0;
     }
 }
 
-int is_move_valid(Map* map, Position start, Position end, int* crossed_finish,int norme_carre) {
+int is_move_valid(Map* map, Position start, Position end, int* crossed_finish, int* crossed_sand) {
     InfoLine infoLine;
     Pos2Dint p; 
-    *crossed_finish = 0; /* On initialise à 0 */
+    *crossed_finish = 0; 
+    *crossed_sand = 0;
     
     initLine(start.x, start.y, end.x, end.y, &infoLine);
     
@@ -162,74 +210,80 @@ int is_move_valid(Map* map, Position start, Position end, int* crossed_finish,in
          
         if(p.x < 0 || p.x >= map->width || p.y < 0 || p.y >= map->height) return 0; 
         if (map->grid[p.y][p.x].type == '.' || map->grid[p.y][p.x].has_opponent == 1) return 0; 
-        if (map->grid[p.y][p.x].type == '~' && norme_carre > 1) {
-            return 0;
-        }
         
-        if (map->grid[p.y][p.x].type == '=') {
-            *crossed_finish = 1;
-        }
+        if (map->grid[p.y][p.x].type == '=') *crossed_finish = 1;
+        if (map->grid[p.y][p.x].type == '~') *crossed_sand = 1;
     }
     return 1; 
 }
+
 int dfs_simulate(Map* map, CarState state, int depth, int is_first_turn, int* best_ax, int* best_ay) {
     int meilleur_score = -INF;
-    int ax, ay, score, nouvelle_vx, nouvelle_vy, norme_carre, in_sand, crossed_finish;
+    int ax, ay, score, nouvelle_vx, nouvelle_vy, norme_carre, crossed_finish, crossed_sand, in_sand_start;
     CarState new_state;
     Position new_pos;
     
-    /* 1. Ne JAMAIS abandonner : si on n'a plus d'essence, on renvoie une pénalité 
-          basée sur la distance pour inciter l'IA à "ramper" jusqu'au bout. */
     if(state.gas <= 0) {
-        return -(map->grid[state.pos.y][state.pos.x].dist_to_goal * 1000) - 50000;
+        int dist = map->grid[state.pos.y][state.pos.x].dist_to_goal;
+        if (dist >= INF) return -INF + 1;
+        return -(dist * 100) - 50000;
     }
     
-    /* 2. Évaluation à l'horizon */
     if(depth == 0) {
         int eval_score = 0;
         int v_carre = (state.vx * state.vx) + (state.vy * state.vy);
         int dist = map->grid[state.pos.y][state.pos.x].dist_to_goal;
         
-        eval_score -= (dist * 1000);   
-        eval_score += (state.gas * 40); 
-        eval_score -= (v_carre * 15);  
+        if (dist >= INF) return -INF + 1;
+        
+        eval_score -= (dist * 100);   
+        
+        /* CORRECTION : L'essence vaut de l'or (400), et on n'a plus peur de la vitesse (120) ! */
+        eval_score += (state.gas * 400);  
+        eval_score -= (v_carre * 120);  
         
         return eval_score;
     }
     
-    /* 3. Exploration de l'arbre */
+    in_sand_start = (map->grid[state.pos.y][state.pos.x].type == '~') ? 1 : 0;
+    
     for (ax = -1; ax <= 1; ax++) {
         for (ay = -1; ay <= 1; ay++) {
             nouvelle_vx = state.vx + ax;
             nouvelle_vy = state.vy + ay;
-            
             norme_carre = (nouvelle_vx * nouvelle_vx) + (nouvelle_vy * nouvelle_vy);
             
-            /* Limite absolue du moteur sur asphalte */
             if (norme_carre > 25) continue;
+            if (in_sand_start && norme_carre > 1) continue;
             
             new_pos.x = state.pos.x + nouvelle_vx;
             new_pos.y = state.pos.y + nouvelle_vy;
             
-            crossed_finish = 0;
-            
-            /* ON PASSE norme_carre À LA FONCTION ! */
-            if(is_move_valid(map, state.pos, new_pos, &crossed_finish, norme_carre) == 0) {
+            if (new_pos.x < 0 || new_pos.x >= map->width || new_pos.y < 0 || new_pos.y >= map->height) {
                 continue;
             }
             
+            crossed_finish = 0;
+            crossed_sand = 0;
+            
+            if(is_move_valid(map, state.pos, new_pos, &crossed_finish, &crossed_sand) == 0) continue;
+            if (crossed_sand == 1 && norme_carre > 1) continue;
+            
             if (crossed_finish == 1) {
-                if (map->grid[state.pos.y][state.pos.x].dist_to_goal < 30) {
+                if (map->grid[state.pos.y][state.pos.x].dist_to_goal < 1500) {
                     score = 1000000 + (state.gas * 10);
-                } else {
-                    continue; 
-                }
+                } else continue; 
             } else {
                 new_state.pos = new_pos;
                 new_state.vx = nouvelle_vx;
                 new_state.vy = nouvelle_vy;
-                in_sand = (map->grid[state.pos.y][state.pos.x].type == '~') ? 1 : 0;
-                new_state.gas = state.gas - gasConsumption(ax, ay, state.vx, state.vy, in_sand);
+                
+                if (crossed_sand) {
+                    new_state.vx /= 5;
+                    new_state.vy /= 5;
+                }
+                
+                new_state.gas = state.gas - gasConsumption(ax, ay, state.vx, state.vy, crossed_sand);
                 new_state.boosts_left = state.boosts_left;
                 
                 score = dfs_simulate(map, new_state, depth - 1, 0, NULL, NULL);
@@ -247,37 +301,6 @@ int dfs_simulate(Map* map, CarState state, int depth, int is_first_turn, int* be
     return meilleur_score;
 }
 
-int is_safe_to_boost(Map* map, CarState state, int ax, int ay) {
-    int vitesse_projetee_x, vitesse_projetee_y, distance_freinage;
-    double vitesse_norme;
-    Position point_impact_theorique;
-    
-    if(state.boosts_left <= 0 || (ax == 0 && ay == 0)) {
-        return 0; 
-    }
-    
-    vitesse_projetee_x = state.vx + 2 * ax;
-    vitesse_projetee_y = state.vy + 2 * ay;
-    
-    vitesse_norme = sqrt(vitesse_projetee_x * vitesse_projetee_x + vitesse_projetee_y * vitesse_projetee_y);
-    if (vitesse_norme == 0) return 0;
-    
-    distance_freinage = (int)((vitesse_norme * (vitesse_norme + 1)) / 2);
-    
-    point_impact_theorique.x = state.pos.x + (int)((vitesse_projetee_x / vitesse_norme) * distance_freinage);
-    point_impact_theorique.y = state.pos.y + (int)((vitesse_projetee_y / vitesse_norme) * distance_freinage);
-    
-    if(point_impact_theorique.x < 0 || point_impact_theorique.x >= map->width ||
-       point_impact_theorique.y < 0 || point_impact_theorique.y >= map->height) {
-        return 0;
-    }
-    
-    if(map->grid[point_impact_theorique.y][point_impact_theorique.x].type == '.') {
-        return 0; 
-    }
-    return 1;
-}
-
 /* --- Boucle principale --- */
 
 int main(void) {
@@ -288,6 +311,8 @@ int main(void) {
     int round = 0;
     Position previous_pos;
     int is_first_round = 1;
+    int expected_vx = 0, expected_vy = 0;
+    
     CarState me, opp1, opp2;
     me.vx = 0; me.vy = 0; me.boosts_left = MAX_BOOSTS;
     
@@ -310,8 +335,7 @@ int main(void) {
 
     while (!feof(stdin)) {
         int accX = 0, accY = 0;
-        if (me.vx > 0) accX = -1; else if (me.vx < 0) accX = 1;
-        if (me.vy > 0) accY = -1; else if (me.vy < 0) accY = 1;
+        
         round++;
         if (fgets(line_buffer, MAX_LINE_LENGTH, stdin) == NULL) break;
         
@@ -320,34 +344,41 @@ int main(void) {
                &opp1.pos.x, &opp1.pos.y, 
                &opp2.pos.x, &opp2.pos.y);
         
-       if (!is_first_round) {
-            me.vx = me.pos.x - previous_pos.x;
-            me.vy = me.pos.y - previous_pos.y;
+        if (!is_first_round) {
+            int expected_x = previous_pos.x + expected_vx;
+            int expected_y = previous_pos.y + expected_vy;
+
+            if (me.pos.x == expected_x && me.pos.y == expected_y) {
+                me.vx = expected_vx;
+                me.vy = expected_vy;
+            } else {
+                me.vx = 0;
+                me.vy = 0;
+            }
         } else {
             me.vx = 0;
             me.vy = 0;
             is_first_round = 0;
         }
+        
+        if (me.vx > 0) accX = -1; else if (me.vx < 0) accX = 1;
+        if (me.vy > 0) accY = -1; else if (me.vy < 0) accY = 1;
+        
         update_opponents(map, opp1, opp2);
         
+        /* VISION À 4 TOURS, Trajectoire pure, sans Nitro kamikaze */
         dfs_simulate(map, me, 4, 1, &accX, &accY);
-        
-       /*if (is_safe_to_boost(map, me, accX, accY)) {
-            accX *= 2;
-            accY *= 2;
-            me.boosts_left--;
-        }*/ 
         
         clear_opponents(map);
         
         fprintf(stdout, "%d %d\n", accX, accY);
         fflush(stdout); 
+        
         previous_pos = me.pos;
+        expected_vx = me.vx + accX;
+        expected_vy = me.vy + accY;
     }
     
-    if (map != NULL) {
-        free_map(map);
-    }
-    
+    if (map != NULL) free_map(map);
     return EXIT_SUCCESS;
 }
